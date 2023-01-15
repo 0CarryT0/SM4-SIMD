@@ -213,8 +213,8 @@ static const ui32 ST3[] = {
     0x794C3535, 0xA0208080, 0x9D78E5E5, 0x56EDBBBB, 0x235E7D7D, 0xC63EF8F8,
     0x8BD45F5F, 0xE7C82F2F, 0xDD39E4E4, 0x68492121 };
 
-void _SM4_do(ui32* input, ui32* output, ui32* rk, ui8 mod);
-void _SM4_SIMD_do(ui32* input, ui32* output, ui32* rk, ui8 mod);
+void _SM4_do8(ui32* input, ui32* output, ui32* rk, ui8 mod);
+void _SM4_SIMD_do8(ui32* input, ui32* output, ui32* rk, ui8 mod);
 
 void SM4_Key_Gen(ui32* MK, ui32* rk){
     ui32 K[36];
@@ -234,26 +234,44 @@ void SM4_Key_Gen(ui32* MK, ui32* rk){
 }
 
 void SM4_Enc(ui32* plaintext, ui32* ciphertext, ui32* key, ui8 mod) {
-    ui32* rk = (ui32*)malloc(32 * sizeof(ui32));
-    SM4_Key_Gen(key, rk);
-    if (mod == 1)
-        _SM4_do(plaintext, ciphertext, rk, 0);
-    else
-        _SM4_SIMD_do(plaintext, ciphertext, rk, 0);
-    free(rk);
+    if (mod == 1) {
+        ui32* rk = (ui32*)malloc(32 * sizeof(ui32));
+        for (int i = 0; i < 8; ++i) {
+            SM4_Key_Gen(key + (i * 4), rk);
+            _SM4_do8(plaintext + (i * 4), ciphertext + (i * 4), rk, 0);
+        }
+        free(rk);
+    }
+    else {
+        ui32* rk = (ui32*)malloc(256 * sizeof(ui32));
+        //8组轮密钥需要全部先生成
+        for (int i = 0; i < 8; ++i)
+            SM4_Key_Gen(key + (i * 4), rk + (i * 32));
+        _SM4_SIMD_do8(plaintext, ciphertext, rk, 0);
+        free(rk);
+    }
 }
 
 void SM4_Dec(ui32* plaintext, ui32* ciphertext, ui32* key, ui8 mod) {
-    ui32* rk = (ui32*)malloc(32 * sizeof(ui32));
-    SM4_Key_Gen(key, rk);
-    if (mod == 1)
-        _SM4_do(ciphertext, plaintext, rk, 1);
-    else
-        _SM4_SIMD_do(ciphertext, plaintext, rk, 1);
-    free(rk);
+    if (mod == 1) {
+        ui32* rk = (ui32*)malloc(32 * sizeof(ui32));
+        for (int i = 0; i < 8; ++i) {
+            SM4_Key_Gen(key + (i * 4), rk);
+            _SM4_do8(ciphertext + (i * 4), plaintext + (i * 4), rk, 1);
+        }
+        free(rk);
+    }
+    else {
+        ui32* rk = (ui32*)malloc(256 * sizeof(ui32));
+        //8组轮密钥需要全部先生成
+        for (int i = 0; i < 8; ++i)
+            SM4_Key_Gen(key + (i * 4), rk + (i * 32));
+        _SM4_SIMD_do8(ciphertext, plaintext, rk, 1);
+        free(rk);
+    }
 }
 
-void _SM4_do(ui32* input, ui32* output, ui32* rk, ui8 mod) {
+void _SM4_do8(ui32* input, ui32* output, ui32* rk, ui8 mod) {
     ui32 P[36];
     for (int i = 0; i < 4; ++i)
         P[i] = input[i];
@@ -262,27 +280,79 @@ void _SM4_do(ui32* input, ui32* output, ui32* rk, ui8 mod) {
     for (int i = 0; i < 32; ++i) {
         ui32 RKi = (mod == 0) ? rk[i] : rk[31 - i];
         tmp = RKi ^ P[i + 1] ^ P[i + 2] ^ P[i + 3];
-        res = P[i] ^ ST0[tmp_8ptr[0]] ^ ST1[tmp_8ptr[1]] ^ ST2[tmp_8ptr[2]] ^ ST3[tmp_8ptr[3]];
+        res = P[i] ^ ST0[tmp_8ptr[0]] ^ ST1[tmp_8ptr[1]] 
+            ^ ST2[tmp_8ptr[2]] ^ ST3[tmp_8ptr[3]];
         P[i + 4] = res;
     }
     for (int i = 0; i < 4; ++i) {
         output[i] = P[35 - i];
     }
 }
+//矩阵转置，手推看看。
+#define MM256_PACK0_EPI32(a, b, c, d)                  \
+    _mm256_unpacklo_epi64(_mm256_unpacklo_epi32(a, b), \
+                          _mm256_unpacklo_epi32(c, d))
+#define MM256_PACK1_EPI32(a, b, c, d)                  \
+    _mm256_unpackhi_epi64(_mm256_unpacklo_epi32(a, b), \
+                          _mm256_unpacklo_epi32(c, d))
+#define MM256_PACK2_EPI32(a, b, c, d)                  \
+    _mm256_unpacklo_epi64(_mm256_unpackhi_epi32(a, b), \
+                          _mm256_unpackhi_epi32(c, d))
+#define MM256_PACK3_EPI32(a, b, c, d)                  \
+    _mm256_unpackhi_epi64(_mm256_unpackhi_epi32(a, b), \
+                          _mm256_unpackhi_epi32(c, d))
 
-void _SM4_SIMD_do(ui32* input, ui32* output, ui32* rk, ui8 mod) {
-    ui32 P[36];
-    for (int i = 0; i < 4; ++i)
-        P[i] = input[i];
-    ui32 tmp, res;
-    ui8* tmp_8ptr = (ui8*)&tmp;
-    for (int i = 0; i < 32; ++i) {
-        ui32 RKi = (mod == 0) ? rk[i] : rk[31 - i];
-        tmp = RKi ^ P[i + 1] ^ P[i + 2] ^ P[i + 3];
-        res = P[i] ^ ST3[tmp_8ptr[0]] ^ ST2[tmp_8ptr[1]] ^ ST1[tmp_8ptr[2]] ^ ST0[tmp_8ptr[3]];
-        P[i + 4] = res;
+void _SM4_SIMD_do8(ui32* input, ui32* output, ui32* rk, ui8 mod) {
+    __m256i P[36], tmp[4], mask;
+    mask = _mm256_set1_epi32(0xFF);
+    //加载数据
+    tmp[0] = _mm256_loadu_si256((const __m256i*)input + 0);
+    tmp[1] = _mm256_loadu_si256((const __m256i*)input + 1);
+    tmp[2] = _mm256_loadu_si256((const __m256i*)input + 2);
+    tmp[3] = _mm256_loadu_si256((const __m256i*)input + 3);
+    //转置存储，方便并行
+    P[0] = MM256_PACK0_EPI32(tmp[0], tmp[1], tmp[2], tmp[3]);
+    P[1] = MM256_PACK1_EPI32(tmp[0], tmp[1], tmp[2], tmp[3]);
+    P[2] = MM256_PACK2_EPI32(tmp[0], tmp[1], tmp[2], tmp[3]);
+    P[3] = MM256_PACK3_EPI32(tmp[0], tmp[1], tmp[2], tmp[3]);
+    // 32轮迭代
+    for (int i = 0; i < 32; i++) {
+        __m256i k;
+        //由于转置特性，rk需要调整顺序。
+        if (mod == 0)
+            k = _mm256_set_epi32(rk[224 + i], rk[160 + i], 
+                rk[96 + i],  rk[32 + i], rk[192 + i], rk[128 + i], rk[64 + i], rk[i]);
+        else
+            k = _mm256_set_epi32(rk[255 - i],  rk[191 - i], 
+                rk[127 - i],  rk[63 - i], rk[223 - i], rk[159 - i], rk[95 - i], rk[31 - i]);
+        tmp[0] = _mm256_xor_si256(_mm256_xor_si256(P[i + 1], P[i + 2]),
+            _mm256_xor_si256(P[i + 3], k));
+        //查表
+        tmp[1] = _mm256_xor_si256(
+            P[i], _mm256_i32gather_epi32((const int*)ST0,
+                _mm256_and_si256(tmp[0], mask), 4));
+        tmp[0] = _mm256_srli_epi32(tmp[0], 8);
+        tmp[1] = _mm256_xor_si256(
+            tmp[1], _mm256_i32gather_epi32(
+                (const int*)ST1, _mm256_and_si256(tmp[0], mask), 4));
+        tmp[0] = _mm256_srli_epi32(tmp[0], 8);
+        tmp[1] = _mm256_xor_si256(
+            tmp[1], _mm256_i32gather_epi32(
+                (const int*)ST2, _mm256_and_si256(tmp[0], mask), 4));
+        tmp[0] = _mm256_srli_epi32(tmp[0], 8);
+        tmp[1] = _mm256_xor_si256(
+            tmp[1], _mm256_i32gather_epi32(
+                (const int*)ST3, _mm256_and_si256(tmp[0], mask), 4));
+
+        P[i + 4] = tmp[1];
     }
-    for (int i = 0; i < 4; ++i) {
-        output[i] = P[35 - i];
-    }
+    //恢复分组并装填
+    _mm256_storeu_si256((__m256i*)output + 0,
+        MM256_PACK0_EPI32(P[35], P[34], P[33], P[32]));
+    _mm256_storeu_si256((__m256i*)output + 1,
+        MM256_PACK1_EPI32(P[35], P[34], P[33], P[32]));
+    _mm256_storeu_si256((__m256i*)output + 2,
+        MM256_PACK2_EPI32(P[35], P[34], P[33], P[32]));
+    _mm256_storeu_si256((__m256i*)output + 3,
+        MM256_PACK3_EPI32(P[35], P[34], P[33], P[32]));
 }

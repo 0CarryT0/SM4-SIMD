@@ -1,26 +1,80 @@
 ﻿#include <stdio.h>
 
 #include "SM4_SIMD.h"
-
+#include <ctime>
+#define INF 100000
+//八组并行计算
 int main() {
-    // 01 23 45 67 89 ab cd ef fe dc ba 98 76 54 32 10
-    ui32 key[4] = { 0x01234567, 0x89abcdef, 0xfedcba98, 0x76543210 };
-    // 01 23 45 67 89 ab cd ef fe dc ba 98 76 54 32 10
-    ui32 in[4] = { 0x01234567, 0x89abcdef, 0xfedcba98, 0x76543210 };
-    ui32 out[4];
-    SM4_Enc(in, out, key, 1);
-    // 68 1e df 34 d2 06 96 5e 86 b3 e9 4f 53 6e 42 46
-    for (int i = 0; i < 4; i++) {
-        printf("%08x", out[i]);
-    }
-    for (int i = 0; i < 4; i++) {
-        in[i] = 0;
+    ui32 key[32] = { 
+        0x01234567, 0x89abcdef, 0xfedcba98, 0x76543210,
+        0x01234567, 0x89abcdef, 0xfedcba98, 0x76543211,
+        0x01234567, 0x89abcdef, 0xfedcba98, 0x76543212,
+        0x01234567, 0x89abcdef, 0xfedcba98, 0x76543215,
+        0x01234567, 0x89abcdef, 0xfedcba98, 0x76543210,
+        0x01234567, 0x89abcdef, 0xfedcba98, 0x76543210,
+        0x01234567, 0x89abcdef, 0xfedcba98, 0x76543210,
+        0x01234567, 0x89abcdef, 0xfedcba98, 0x76543210
+    };
+    ui32 in[32] = { 
+        0x01234567, 0x89abcdef, 0xfedcba98, 0x76543212,
+        0x01234567, 0x89abcdef, 0xfedcba98, 0x76543213,
+        0x01234567, 0x89abcdef, 0xfedcba98, 0x76543215,
+        0x01234567, 0x89abcdef, 0xfedcba98, 0x76543211,
+        0x01234567, 0x89abcdef, 0xfedcba98, 0x76543210,
+        0x01234567, 0x89abcdef, 0xfedcba98, 0x76543210,
+        0x01234567, 0x89abcdef, 0xfedcba98, 0x76543210,
+        0x01234567, 0x89abcdef, 0xfedcba98, 0x76543210
+    };
+    ui32 out1[32];
+    ui32 out2[32];
+
+    printf("正常SM4加密：\n");
+    clock_t t1 = clock();
+    for (int i = 0; i < INF; ++i)
+        SM4_Enc(in, out1, key, 1);
+    clock_t t2 = clock();
+    double ts = ((double)t2 - (double)t1);
+    printf("common cost = %f ms\n", ts);
+    for (int i = 0; i < 32; i++) {
+        printf("%08x", out1[i]);
+        if (i % 4 == 3)
+            printf("\n");
     }
     printf("\n");
-    SM4_Dec(in, out, key, 1);
-    // 01 23 45 67 89 ab cd ef fe dc ba 98 76 54 32 10
-    for (int i = 0; i < 4; i++) {
+
+    printf("SIMD并行加速SM4加密：\n");
+    t1 = clock();
+    for (int i = 0; i < INF; ++i)
+        SM4_Enc(in, out2, key, 0);
+    t2 = clock();
+    ts = ((double)t2 - (double)t1);
+    printf("SIMD cost = %f ms\n", ts);
+    for (int i = 0; i < 32; i++) {
+        printf("%08x", out2[i]);
+        if (i % 4 == 3)
+            printf("\n");
+    }
+    printf("\n");
+
+    for (int i = 0; i < 32; i++) {
+        in[i] = 0;
+    }
+
+    printf("正常解密：\n");
+    SM4_Dec(in, out1, key, 1);
+    for (int i = 0; i < 32; i++) {
         printf("%08x", in[i]);
+        if (i % 4 == 3)
+            printf("\n");
+    }
+    printf("\n");
+
+    printf("加速解密：\n");
+    SM4_Dec(in, out2, key, 1);
+    for (int i = 0; i < 32; i++) {
+        printf("%08x", in[i]);
+        if (i % 4 == 3)
+            printf("\n");
     }
     printf("\n");
     return 0;
