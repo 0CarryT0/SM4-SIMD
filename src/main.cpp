@@ -1,5 +1,5 @@
 ﻿#include <stdio.h>
-
+#include <stdlib.h>
 #include "SM4_SIMD.h"
 #include <ctime>
 #define INF 100000
@@ -77,5 +77,6 @@ int main() {
             printf("\n");
     }
     printf("\n");
+    system("pause");
     return 0;
 }
