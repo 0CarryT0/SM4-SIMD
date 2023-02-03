@@ -16,3 +16,7 @@ AVX2指令优化SM4。
 
 密钥生成用查表法+AVX并行。
 
+### 测试结果
+
+![image](https://github.com/0CarryT0/SM4-SIMD/blob/master/test.png)
+
