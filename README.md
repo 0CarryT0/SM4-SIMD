@@ -18,5 +18,7 @@ AVX2指令优化SM4。
 
 ### 测试结果
 
+x64 开启O2
+
 ![image](https://github.com/0CarryT0/SM4-SIMD/blob/master/test.png)
 
